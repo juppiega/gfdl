@@ -51,9 +51,28 @@ p = ncread(filename,'pfull')*100;
 % Plot Q
 figure;
 [plot_x,plot_p] = meshgrid(x/1E3,p/100);
-surf(plot_x, plot_p, Q(2:end-1,2:end-1)'); view(2); colorbar; axis tight; set(gca,'ydir','reverse'); title('Q 12-month mean')
+surf(plot_x, plot_p, Q(2:end-1,2:end-1)','edgecolor','none'); view(2); colorbar; axis tight; set(gca,'ydir','reverse'); title('Q 12-month mean')
 xlabel('x [km]','fontsize',15)
 ylabel('p [hPa]','fontsize',15)
+set(gca,'fontsize',15)
+
+u = read_file(filename,'ucomp');
+streamfun = cumtrapz(p,u,2)*2*pi*6371E3/9.8;
+figure;
+surf(plot_x, plot_p, -streamfun','edgecolor','none'); view(2); colorbar; axis tight; set(gca,'ydir','reverse'); title('Streamfunction [kg/s]')
+xlabel('x [km]','fontsize',15)
+ylabel('p [hPa]','fontsize',15)
+set(gca,'fontsize',15)
+
+theta = T'.*(1000./plot_p).^(2/7);
+rho = plot_p*100./(287*T');
+theta_grad = (theta(2:end,:) - theta(1:end-1,:))./(plot_p(2:end,:) - plot_p(1:end-1,:))/100;
+stability = -9.81^2 * rho(2:end,:) .* theta_grad ./ theta(2:end,:);
+figure;
+surf(plot_x(2:end,:), plot_p(2:end,:), stability,'edgecolor','none'); view(2); colorbar; axis tight; set(gca,'ydir','reverse'); title('N^2 [s^{-2}]')
+xlabel('x [km]','fontsize',15)
+ylabel('p [hPa]','fontsize',15)
+caxis([0, 2E-4])
 set(gca,'fontsize',15)
 
 % ****************************************************************************************************************
@@ -93,7 +112,7 @@ end
 % Plot result
 psi = psi(2:end-1,2:end-1);
 figure;
-contour(plot_x, plot_p, psi'); 
+surf(plot_x, plot_p, psi','edgecolor','none'); 
 view(2); 
 axis tight; 
 xlabel('x [km]','fontsize',15)
