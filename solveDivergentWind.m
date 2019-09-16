@@ -21,12 +21,15 @@ slat = repmat(sin(lat'),length(lon),1);
 
 RE = 6371E3;
 
+more off
+
 for k = 1:size(div,3)
   
   psi = zeros(size(div,1)+2, size(div,2)+2);
   F_this = div(:,:,k) .* clat2 * (RE)^2;
   err = 1E30;
   tol = 1E-7;
+  level = k
   
   while err > tol
     c1 = clat2 .* (D2lat(psi,dlat) + 2*psi(2:end-1,2:end-1)/dlat^2);
@@ -40,6 +43,7 @@ for k = 1:size(div,3)
     residual = div(:,:,k) - div_psi;
     
     err = sqrt(sum(residual(clat>0.5).^2));
+    %pause(0.1)
     
   end
   
@@ -89,6 +93,10 @@ end
 function var = read_file(filename, varname)
 
 var = ncread(filename,varname);
-var = squeeze(mean(var(:,:,:,end-4:end),4));
+if size(var,4) == 2
+  var = squeeze(var(:,:,:,end));
+  return
+end
+var = squeeze(mean(var(:,:,:,end-5:end),4));
 
 end

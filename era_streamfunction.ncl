@@ -39,15 +39,17 @@ local f, u, v, p, lat, lon, div, u_div, v_div, dims, wks, res, streamfun
 begin
 
   f    = addfile (filename, "r")
-  div  = f->mean_div
   p    = f->level
   lat  = f->latitude
-  lon  = f->longitude               
+  lon  = f->longitude  
+  div  = f->mean_div
+  ;u    = f->u
+  ;v    = f->v   
+  
+  ;div = uv2dvF_Wrap(u,v)           
   
   u_div    = new ( dimsizes(div), typeof(div) )
   v_div    = new ( dimsizes(div), typeof(div) )
-
-  ;print(dimsizes(div))
 
   dv2uvf(div, u_div, v_div)
 
@@ -58,9 +60,25 @@ begin
   u_div&lat = lat
   u_div&lon = lon
 
-  system("/bin/rm -f era_udiv.nc")
-  ncdf = addfile("era_udiv_1212.nc" ,"c")
+  v_div!1 = "lev"
+  v_div!2 = "lat"
+  v_div!3 = "lon"
+  v_div&lev = p
+  v_div&lat = lat
+  v_div&lon = lon
+
+  div!1 = "lev"
+  div!2 = "lat"
+  div!3 = "lon"
+  div&lev = p
+  div&lat = lat
+  div&lon = lon
+
+  system("/bin/rm -f era_udiv_12.nc")
+  ncdf = addfile("era_udiv_12.nc" ,"c")
   ncdf->u_div  = u_div
+  ncdf->v_div  = v_div
+  ncdf->div = div
 
   streamfun = compute_streamfunction(u_div, p, south_lat, north_lat, lat, lon)
 
@@ -82,7 +100,7 @@ end
 
 
 begin
-  filename = "era_div_7918_1212.nc"
+  filename = "era_div_7918_12.nc"
   
   streamfun_div = compute_divergent_streamfunction(-20, 20, filename)
 end

@@ -1,4 +1,5 @@
 function z = compute_standard_height(p)
+% p in hPa, z in km
 
 i_trop = p >= 226.321;
 i_strat = ~i_trop;

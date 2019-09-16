@@ -1,19 +1,14 @@
-function [psi] = numericalStreamfunction (sig_lon, p_max, sig_p, dlon, dp, constantHeating)     
+function [psi] = numericalStreamfunction (sig_lon, p_max, sig_p, dlon, dp)     
 % Longitude in degrees, p in hPa
 
-r = 1/(15*86400);
-eps = 1/(5*86400);
+r = 1/(0.6*86400);
+eps = 1/(1*86400);
 N2 = 1.5E-4;
-rho0 = 0.73;
 g = 9.81;
-T0 = 300;
+T0 = 250;
+rho0 = 0.67;
 a = 6371E3;
-sig_lon_ref = 20;
-sig_p_ref = 350;
-Q0 = 1.6*g/T0/86400; % m/s^3
-if constantHeating
-    Q0 = Q0 * (sig_lon_ref/sig_lon) * (sig_p_ref/sig_p);
-end
+Q0 = 3*g/T0/86400; % m/s^3
 display(['Q0: ', num2str(Q0/g*T0*86400)]);
 L = (sig_lon/360)*2*pi*a;
 H = sig_p*100/(rho0*g)*sqrt(N2/(r*eps));
@@ -21,7 +16,10 @@ vert_param = r*eps*rho0^2*g^2/N2;
 
 x = (-180+dlon:dlon:180-dlon)*2*pi*a/360;
 x_spacing = 2*pi*a*dlon/360;
-p = (dp:dp:1000-dp)' * 100;
+p = (dp:dp:1000)' * 100;
+if p(end) < 1000E2
+    p = [p;p(end)+dp*100];
+end
 [X,P] = meshgrid(x,p);
 X = X'; P = P';
 
@@ -99,7 +97,7 @@ title('u [m/s]')
 colorbar('fontsize',15)
 
 display(['Numerical [kg/s]: ', num2str(max(rho0*pi*6371E3*40/180*psi(:))/1E9)])
-analyticalForm (plot_x, plot_p, L, H/sqrt(N2/(r*eps)), Q0, N2, r, eps);
+analyticalForm (plot_x, plot_p, p_max, L, H/sqrt(N2/(r*eps)), Q0, N2, r, eps);
 
 end
 

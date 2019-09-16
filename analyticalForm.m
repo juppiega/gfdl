@@ -1,10 +1,10 @@
-function analyticalForm (x, p, L, H, Q0, N2, r, eps)
+function analyticalForm (x, p, p_max, L, H, Q0, N2, r, eps)
 % x in degrees (-180 to 180), p in hPa (via meshgrid), create 2D with meshgrid. L and H (actual geoetric height) in meters
 
 x = x/360 * 2*pi*6371E3;
 H = H * sqrt(N2/(r*eps));
-rho0 = 0.73;
-y = 100*(p(end,1)/2 - p)/rho0/9.81 * sqrt(N2/(r*eps));
+rho0 = 0.67;
+y = 100*(p_max - p)/rho0/9.81 * sqrt(N2/(r*eps));
 
 ksi = x/L + 1i*y/H; % [unitless]
 w = H*x/L + 1i*L*y/H; % [m]
@@ -35,36 +35,43 @@ y_b = [y_b, -y_b];
 p_b = p(end,1)/2 - y_b / sqrt(N2/(r*eps)) *rho0*9.81/100;
 x_b = x_b/(2*pi*6371E3)*360;
 
-z = (1013.25 - p)*100/rho0/9.81/1E3;
+z = (1000 - p)*100/rho0/9.81/1E3;
 
 figure;
-surf(x,z,psi,'edgecolor','none')
+contourf(x,z,psi/1E9,-40:5:40,'edgecolor','none')
 view(2); 
 axis tight; 
 xlabel('Longitude','fontsize',15)
 ylabel('z [km]','fontsize',15)
 set(gca,'fontsize',15)
 %set(gca,'ydir','reverse'); 
-title('Streamfunction [kg/s]')
+title('b) Analytic streamfunction [Tg/s]', 'fontsize',14)
+colormap(jet(16))
 colorbar('fontsize',15)
-ma = max(psi); mi  = min(psi);
-caxis([min([-ma,mi]), max([ma,-mi])])
+caxis([-40,40])
+% ma = max(psi); mi  = min(psi);
+% caxis([min([-ma,mi]), max([ma,-mi])])
 hold all
+ylim([0,15])
 %contour3(x,p,psi,'k')
 N = length(x_b)/2;
 %plot3(x_b(1:N),p_b(1:N),max([ma,-mi])+zeros(1,N),'color','r','linewidth',2.0)
 %plot3(x_b(N+1:end),p_b(N+1:end),max([ma,-mi])+zeros(1,N),'color','r','linewidth',2.0)
 
 figure;
-surf(x,z,heat,'edgecolor','none')
+colormap(copper(6))
+contourf(x,z,heat,0.5:0.5:3.0,'edgecolor','none')
 view(2); 
 axis tight; 
 xlabel('Longitude','fontsize',15)
 ylabel('z [km]','fontsize',15)
 set(gca,'fontsize',15)
 %set(gca,'ydir','reverse'); 
-title('Heating [K/day]')
+title('a) Heating [K/day]','fontsize',14)
 colorbar('fontsize',15)
+ylim([0,15])
+caxis([0,3])
+set(gca,'Color','k')
 
 %
 %figure;
