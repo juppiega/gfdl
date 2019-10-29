@@ -409,7 +409,7 @@ caxis([min(mean_fv(:)), -min(mean_fv(:))])
 %min(streamfun(:)),max(streamfun(:))
 
 figure;
-streamfun = cumtrapz(p,mean_udiv,2)*2*pi*6371E3/9.8;
+streamfun = cumtrapz(p,mean_udiv,2) * pi * 100 *6371E3 * 2 * aver_end_lat/180/9.81;
 [X,Z] = meshgrid(lon,p);
 surf(X,Z,streamfun','edgecolor','none');
 %contour(X,Z,streamfun','showtext','on');
@@ -504,7 +504,7 @@ if size(var,4) == 2
 end
 
 try
-var = squeeze(mean(var(:,:,:,end-9:end),4));
+var = squeeze(mean(var(:,:,:,1:end),4));
 catch
 var = squeeze(mean(var(:,:,:,end-2:end),4));
 end

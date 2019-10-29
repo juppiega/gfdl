@@ -42,11 +42,7 @@ begin
   p    = f->level
   lat  = f->latitude
   lon  = f->longitude  
-  div  = f->mean_div
-  ;u    = f->u
-  ;v    = f->v   
-  
-  ;div = uv2dvF_Wrap(u,v)           
+  div  = f->mean_div         
   
   u_div    = new ( dimsizes(div), typeof(div) )
   v_div    = new ( dimsizes(div), typeof(div) )
@@ -74,35 +70,35 @@ begin
   div&lat = lat
   div&lon = lon
 
-  system("/bin/rm -f era_udiv_12.nc")
-  ncdf = addfile("era_udiv_12.nc" ,"c")
+  system("/bin/rm -f era_udiv_out.nc")
+  ncdf = addfile("era_udiv_out.nc" ,"c")
   ncdf->u_div  = u_div
   ncdf->v_div  = v_div
   ncdf->div = div
 
-  streamfun = compute_streamfunction(u_div, p, south_lat, north_lat, lat, lon)
+  ;streamfun = compute_streamfunction(u_div, p, south_lat, north_lat, lat, lon)
 
-  dims = dimsizes(streamfun)
-  num_levels = dims(0)
+  ;dims = dimsizes(streamfun)
+  ;num_levels = dims(0)
 
-  wks   = gsn_open_wks ("png", str_concat((/filename, "_divergent_streamfuntion"/)) ) 
-  res                 = True                        
-  res@tiMainString    = "Divergent Walker Streamfunction" 
-  res@cnFillOn             = True                  ; turn on color fill
-  res@cnFillPalette        = "BlWhRe"              ; set color map 
-  res@trYMinF = 70
+  ;wks   = gsn_open_wks ("png", str_concat((/filename, "_divergent_streamfuntion"/)) ) 
+  ;res                 = True                        
+  ;res@tiMainString    = "Divergent Walker Streamfunction" 
+  ;res@cnFillOn             = True                  ; turn on color fill
+  ;res@cnFillPalette        = "BlWhRe"              ; set color map 
+  ;res@trYMinF = 70
          
   ;plot  = gsn_csm_pres_hgt(wks, streamfun, res ) 
 
-  return(streamfun)
+  return(f)
 
 end
 
 
 begin
-  filename = "era_div_7918_12.nc"
+  filename = "era_div_in.nc"
   
-  streamfun_div = compute_divergent_streamfunction(-20, 20, filename)
+  fileref = compute_divergent_streamfunction(-20, 20, filename)
 end
 
 
