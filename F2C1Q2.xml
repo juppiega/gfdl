@@ -117,8 +117,8 @@ Change current_date in coupler_nml accordingly.
 -->
   <property name="EXP_NAME"              value="F2C1Q2"/>
   <property name="EXP_START"             value="0001"/>
-  <property name="EXP_END"               value="0001"/>
-  <property name="PROD_SIMTIME"          value="1"/> <!--simulation length in years-->
+  <property name="EXP_END"               value="0005"/>
+  <property name="PROD_SIMTIME"          value="5"/> <!--simulation length in years-->
 
   <property name="PP_CMIP_CHUNK_A"  value="5yr"/>  <!--smaller chunk length for pp/analysis-->
   <property name="PP_CMIP_CHUNK_B"  value="10yr"/> <!--bigger  chunk length for pp/analysis-->
@@ -575,7 +575,7 @@ DO NOT CHANGE THE REST OF THE PROPERTIES
 <!-- ESM4 atmos-only config -->
 <freInclude name="c96_3456_production">
         <resources jobWallclock="16:00:00"
-                   segRuntime="02:15:00" >
+                   segRuntime="04:00:00" >
                 <atm ranks="1728" threads="4" hyperthread="on"  layout = "12,24"    io_layout = "1,4" />
                 <lnd                                            layout = "12,24"    io_layout = "1,4" />
                 <ocn ranks="0"    threads="0" hyperthread="off" layout = "144,12"   io_layout = "1,4" /> 
@@ -8662,14 +8662,14 @@ $baseDate
 "land",    "geolat_t",   "geolat_t",   "land_8xdaily_inst", "all", .false., "none", 1
 
 ##. Cloud fields
-"dynamics",  "cld_amt",                        "cld_amt",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"dynamics",  "liq_wat",                        "liq_wat",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"dynamics",  "ice_wat",                        "ice_wat",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"dynamics",  "liq_drp",                        "liq_drp",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"cloudrad",  "shallow_droplet_number",         "shallow_droplet_number",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"cloudrad",  "shallow_conc_ice",         "shallow_conc_ice",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"cloudrad",  "shallow_conc_drop",         "shallow_conc_drop",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
-"cloudrad",  "shallow_area_liq",         "shallow_area_liq",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"dynamics",  "cld_amt",                        "cld_amt",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"dynamics",  "liq_wat",                        "liq_wat",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"dynamics",  "ice_wat",                        "ice_wat",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"dynamics",  "liq_drp",                        "liq_drp",          "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"cloudrad",  "shallow_droplet_number",         "shallow_droplet_number",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"cloudrad",  "shallow_conc_ice",         "shallow_conc_ice",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"cloudrad",  "shallow_conc_drop",         "shallow_conc_drop",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
+#"cloudrad",  "shallow_area_liq",         "shallow_area_liq",   "atmos_8xdaily_inst",     "all", .false.,  "none", 2
 
 ##. Precipitation, kg m-2 s-1 (longitude,latitude,time)
  "moist",         "pr",            "pr",            "atmos_8xdaily_cmip",      "all",  .true.,  "none", 2
