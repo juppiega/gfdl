@@ -2355,7 +2355,7 @@ land, "area",       "area",       "land_month_inst", "all", .false., "none", 2
  	</namelist>
       <namelist name ="cloud_spec_nml">
         cloud_type_form = 'stratdeepuw'
-        doing_data_override = .true.
+        !doing_data_override = .true.
 	do_stochastic_clouds = .true.
 	use_cloud_tracers_in_radiation = .false.
 	random_seed_permutation = 1
