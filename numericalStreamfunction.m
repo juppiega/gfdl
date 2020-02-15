@@ -1,8 +1,8 @@
 function [psi] = numericalStreamfunction (sig_lon, p_max, sig_p, dlon, dp)     
 % Longitude in degrees, p in hPa
 
-r = 1/(0.6*86400);
-eps = 1/(1*86400);
+r = 1/(2*86400);
+eps = 1/(2*86400);
 N2 = 1.5E-4;
 g = 9.81;
 T0 = 250;
@@ -97,7 +97,16 @@ title('u [m/s]')
 colorbar('fontsize',15)
 
 display(['Numerical [kg/s]: ', num2str(max(rho0*pi*6371E3*40/180*psi(:))/1E9)])
-analyticalForm (plot_x, plot_p, p_max, L, H/sqrt(N2/(r*eps)), Q0, N2, r, eps);
+display(['Numerical [m^2/s]: ', num2str(max(psi(:)))])
+psi_m2s = analyticalForm (plot_x, plot_p, p_max, L, H/sqrt(N2/(r*eps)), Q0, N2, r, eps);
+psi_analytic = zeros(length(x)+2,length(p)+2);
+psi_analytic(2:end-1,2:end-1) = -psi_m2s';
+% 
+% Q_numerical = -N2*cumtrapz(x(5:end-5)', PDE_approx(5:end-5,5:end-5), 1)*86400*T0/g;
+% figure; surf(psi','edgecolor','none'); view(2); colorbar; cl = caxis; % caxis([0,5])
+% analytic_approx = Dxx(psi_analytic, x_spacing) + vert_param*Dpp(psi_analytic, h1, h2);
+% Q_analytic = -N2*cumtrapz(x(5:end-5)', analytic_approx(5:end-5,5:end-5), 1)*86400*T0/g;
+% figure; surf(psi_analytic','edgecolor','none'); view(2); colorbar; caxis(cl)
 
 end
 

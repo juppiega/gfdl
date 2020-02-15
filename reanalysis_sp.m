@@ -28,7 +28,7 @@ Q_tot = max(Q_tot, 0);
 Q = Q_tot;% - mean(Q_tot,1);
 mean_T_pert = squeeze(mean(T_pert(:,ind,:),2));
 mean_T = squeeze(mean(T(:,ind,:),2));
-mean_Q = squeeze(mean(Q(:,ind,:),2)); mean_Q = mean_Q - mean(mean_Q,1);
+mean_Q = squeeze(mean(Q(:,ind,:),2)); %mean_Q = mean_Q - mean(mean_Q,1);
 
 h1 = p_3d(1,1,2:end-1) - p_3d(1,1,1:end-2); 
 h2 = p_3d(1,1,3:end) - p_3d(1,1,2:end-1); 
@@ -36,6 +36,12 @@ T_p = -h2./(h1.*(h1+h2)).*T(:,:,1:end-2) + (h2-h1)./(h2.*h1).*T(:,:,2:end-1) + h
 alpha = 287*T(:,:,2:end-1)./p_3d(1,1,2:end-1);
 S_p = alpha/1004 - T_p;
 mean_Sp = squeeze(mean(S_p(:,ind,:),2));
+theta = T.*(1000E2./p_3d).^(287/1004);
+theta_p = -h2./(h1.*(h1+h2)).*theta(:,:,1:end-2) + (h2-h1)./(h2.*h1).*theta(:,:,2:end-1) + h1./(h2.*(h1+h2)).*theta(:,:,3:end);
+g = 9.81;
+rho = 1./alpha;
+N2 = -g^2 .* rho .* theta_p./theta(:,:,2:end-1);
+mean_N2 = squeeze(mean(N2(:,ind,:),2));
 
 figure;
 colormap(jet)
@@ -47,6 +53,17 @@ colorbar
 title('S_p')
 set(gca,'Ydir','reverse')
 caxis([0, 1E-3])
+
+figure;
+colormap(jet)
+[X,Z] = meshgrid(lon,p(2:end-1)/100);
+surf(X,Z,mean_N2','edgecolor','none');
+view(2);
+axis tight
+colorbar
+title('N2')
+set(gca,'Ydir','reverse')
+%caxis([0, 1E-3])
 
 % figure;
 % [X,Z] = meshgrid(lon,p/100);

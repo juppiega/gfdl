@@ -14,6 +14,8 @@ coslat(:) = cosd(lat(ind));
 udiv_mean = squeeze(sum(u_div(:,ind,:,1).*coslat/sum(coslat),2));
 %div_mean = squeeze(mean(div(:,ind,:,:),2));
 streamfun = cumtrapz(p, udiv_mean, 2) * pi * 100 *6371E3 * 2 * aver_lat/180/9.81;
+dlon = lon(2)-lon(1);
+omega = -(streamfun(2:end,:) - streamfun(1:end-1,:))/(dlon/360*40E6)/(2*aver_lat/180*20E6);
 z = compute_standard_height(p);
 %streamfun = streamfun(:,z<16);
 %z = z(z<=16);
@@ -62,11 +64,25 @@ axis tight
 yl = get(gca, 'ylim');
 ylim([yl(1),15])
 fs = 15;
-title(['d) La Ni',char(0241),'a streamfunction [Tg/s]'],'fontsize',fs)
+title(['January streamfunction [Tg/s]'],'fontsize',fs)
 xlabel('Longitude','fontsize',fs)
 ylabel('Altitude [km]','fontsize',fs)
 set(gca,'fontsize',fs)
 %set(gca,'ydir','reverse')
+
+figure;
+colormap(jet)
+[LON,Z] = meshgrid(lon(1:end-1), z);
+surf(LON,Z,omega','edgecolor','none')
+view(2)
+colorbar
+axis tight
+title('ERA5 Omega La Nina','fontsize',fs)
+xlabel('Longitude','fontsize',fs)
+ylabel('Altitude [km]','fontsize',fs)
+set(gca,'fontsize',fs)
+ylim([yl(1),15])
+caxis([-2E-3,2E-3])
 
 end
 

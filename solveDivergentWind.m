@@ -1,11 +1,19 @@
-function [] = solveDivergentWind (experiment_name)
+function [] = solveDivergentWind (experiment_name, div, lat, lon, div_wind_name)
 
-pkg load netcdf
-filename = ['atmos_average.',experiment_name,'.nc'];
-div_wind_name = ['div_wind.',experiment_name,'.mat'];
-div = read_file(filename, 'div');
-lon = ncread(filename,'lon')*pi/180;
-lat = ncread(filename,'lat')*pi/180;
+
+if ~isempty(experiment_name) && nargin == 1
+    pkg load netcdf
+    filename = ['atmos_average.',experiment_name,'.nc'];
+    div_wind_name = ['div_wind.',experiment_name,'.mat'];
+    div = read_file(filename, 'div');
+    lon = ncread(filename,'lon');
+    lat = ncread(filename,'lat'); 
+end
+if nargin < 5
+    error('solveDivergentWind: too few arguments')
+end
+lon = lon * pi/180;
+lat = lat * pi/180;
 dlat = diff(lat); dlat = dlat(floor(length(dlat)/2));
 dlon = lon(2) - lon(1);
 

@@ -36,7 +36,7 @@ module cloud_mod
 implicit none
 private
 
-public :: cloudfrac, cloud_init, cloud_end, compute_clouds
+public :: cloudfrac, tau, g_liq, lw_emiss, cloud_init, cloud_end, compute_clouds
 
 character(len=10), parameter :: mod_name = 'cloud'
 logical :: initialized     = .false.
@@ -276,10 +276,11 @@ real    :: linear_tau      = 0.1
 real    :: albedo_value    = 0.06
 real    :: wv_exponent     = 4.0 
 real    :: solar_exponent  = 4.0 
+integer :: numcols         = 200 ! Number of random independent columns to use in the cloud radiation scheme.
 
 real, allocatable, dimension(:,:)   :: insolation, p2, albedo, lw_tau_0, sw_tau_0
 real, allocatable, dimension(:,:)   :: b_surf
-real, allocatable, dimension(:,:,:) :: b, tdt_rad, tdt_solar
+real, allocatable, dimension(:,:,:) :: b, tdt_rad, tdt_rad_cs, tdt_solar
 real, allocatable, dimension(:,:,:) :: lw_up, lw_down, lw_flux, sw_up, sw_down, sw_flux, rad_flux 
 real, allocatable, dimension(:,:,:) :: lw_tau, sw_tau, lw_dtrans
 real, allocatable, dimension(:,:)   :: olr, net_lw_surf, toa_sw_in
@@ -289,14 +290,14 @@ real, save :: pi, deg_to_rad , rad_to_deg
 namelist/two_stream_gray_rad_nml/ solar_constant, del_sol, &
            ir_tau_eq, ir_tau_pole, atm_abs, sw_diff, &
            linear_tau, del_sw, albedo_value, wv_exponent, &
-           solar_exponent
+           solar_exponent, numcols
         
 !==================================================================================
 !-------------------- diagnostics fields -------------------------------
 
-integer :: id_olr, id_swdn_sfc, id_swdn_toa, id_net_lw_surf, id_lwdn_sfc, id_lwup_sfc, &
-           id_tdt_rad, id_tdt_solar, id_flux_rad, id_flux_lw, id_flux_sw, id_swdn_sfc_cs, &
-           id_swup_toa, id_swup_toa_cs
+integer :: id_olr, id_olr_cs, id_swdn_sfc, id_swdn_toa, id_net_lw_surf, id_lwdn_sfc, id_lwup_sfc, &
+           id_tdt_rad, id_tdt_rad_cs, id_tdt_solar, id_flux_rad, id_flux_lw, id_flux_sw, id_swdn_sfc_cs, &
+           id_swup_toa, id_swup_toa_cs, id_lwdn_sfc_cs
 
 character(len=10), parameter :: mod_name = 'two_stream'
 
@@ -307,6 +308,249 @@ contains
 
 
 ! ==================================================================================
+subroutine compute_radiation_with_clouds(is, js, Time_diag, lat, p_half, t,         &
+                           t_surf, t, net_surf_sw_down, surf_lw_down, tdt)
+implicit none
+integer, intent(in)                 :: is, js
+type(time_type), intent(in)         :: Time_diag
+real, intent(in), dimension(:,:)    :: lat
+real, intent(out), dimension(:,:)   :: net_surf_sw_down
+real, intent(out), dimension(:,:)   :: surf_lw_down
+real, intent(in) , dimension(:,:)   :: t_surf
+real, intent(in) , dimension(:,:,:) :: t, p_half
+real, intent(inout), dimension(:,:,:) :: tdt
+
+integer :: i,j,k
+real, allocatable, dimension(:,:) :: cols
+real, dimension(size(t,1), size(t,2)) :: sw_toa_up, sw_toa_up_cs, swdn_sfc_cs, &
+                                         surf_lw_down_cs, olr_cs
+
+N = size(t,3)
+allocate(cols(N,numcols))
+
+do j = 1,size(t,2)
+  do i = 1,size(t,1)
+    call compute_independent_columns(cloudfrac(i,j,:), cols)
+    call compute_sw(cols, lat(i,j), sw_toa_up(i,j), net_surf_sw_down(i,j), sw_toa_up_cs(i,j), swdn_sfc_cs(i,j))
+    call compute_lw(cols, lat(i,j), t_surf(i,j), t(i,j,:), p_half(i,j,:), surf_lw_down(i,j), surf_lw_down_cs(i,j), &
+         olr(i,j), olr_cs(i,j), tdt_rad(i,j,:), tdt_rad_cs(i,j,:))
+  end do
+end do
+
+!------- downward sw flux surface -------
+if ( id_swdn_sfc > 0 ) then
+   used = send_data ( id_swdn_sfc, net_surf_sw_down, Time_diag)
+endif
+if ( id_swup_toa > 0 ) then
+   used = send_data ( id_swup_toa, sw_toa_up, Time_diag)
+endif
+if ( id_swup_toa_cs > 0 ) then
+   used = send_data ( id_swup_toa_cs, sw_toa_up_cs, Time_diag)
+endif
+if ( id_swdn_sfc_cs > 0 ) then
+   used = send_data ( id_swdn_sfc_cs, swdn_sfc_cs, Time_diag)
+endif
+if ( id_olr > 0 ) then
+   used = send_data ( id_olr, olr, Time_diag)
+endif
+if ( id_olr_cs > 0 ) then
+   used = send_data ( id_olr_cs, olr_cs, Time_diag)
+endif
+if ( id_lwdn_sfc > 0 ) then
+   used = send_data ( id_lwdn_sfc, surf_lw_down, Time_diag)
+endif
+if ( id_lwdn_sfc_cs > 0 ) then
+   used = send_data ( id_lwdn_sfc_cs, surf_lw_down_cs, Time_diag)
+endif
+if ( id_tdt_rad > 0 ) then
+   used = send_data ( id_tdt_rad, tdt_rad, Time_diag)
+endif
+if ( id_tdt_rad_cs > 0 ) then
+   used = send_data ( id_tdt_rad_cs, tdt_rad_cs, Time_diag)
+endif
+
+tdt = tdt + tdt_rad_cs
+surf_lw_down = surf_lw_down_cs
+net_surf_sw_down = swdn_sfc_cs
+
+
+end subroutine
+
+! ==================================================================================
+subroutine compute_lw(cols, lat, Ts, t, p_half, surf_lw_down_cloud, surf_lw_down_cs, olr_cloud, olr_cs, tdt_rad, tdt_rad_cs)
+implicit none
+real, intent(in) :: cols(:,:), lat, Ts, t(:), p_half(:)
+real, intent(out) :: surf_lw_down_cloud, surf_lw_down_cs, olr_cloud, olr_cs
+real, intent(out), dimension(size(t)) :: tdt_rad, tdt_rad_cs
+integer :: i,k,n,nhalf
+real :: lw_tau_clear_0
+real, dimension(size(p_half)) :: lw_tau_clear, lw_down_clear, lw_up_clear, lw_down_cloud, lw_up_cloud, F, F_cs
+real, dimension(size(t)) :: lw_dtrans_clear, cloudfree
+
+lw_tau_clear_0 = ir_tau_eq + (ir_tau_pole - ir_tau_eq)*sin(lat)**2;
+
+n = size(t);
+nhalf = n + 1
+do k = 1,nhalf
+    lw_tau_clear(k) = lw_tau_clear_0 * ( linear_tau * p_half(k)/pstd_mks  &
+       + (1.0 - linear_tau) * (p_half(k)/pstd_mks)**wv_exponent );
+end do
+
+do k = 1,n
+    lw_dtrans_clear(k) = exp( -(lw_tau_clear(k+1) - lw_tau_clear(k)) );
+end do
+
+cloudfree = 0.0
+call compute_lw_column(cloudfree, lw_dtrans_clear, lw_emiss, Ts, t, lw_down_clear, lw_up_clear);
+olr_cs = lw_up_clear(1);
+surf_lw_down_cs = lw_down_clear(nhalf);
+F_cs = lw_up_clear - lw_down_clear;
+tdt_rad_cs = grav/cp_air*(F_cs(2:nhalf)-F_cs(1:nhalf-1))/(p_half(2:nhalf) - p_half(1:nhalf-1));
+
+olr_cloud = 0.0; surf_lw_down_cloud = 0.0; F = 0.0
+do i = 1,numcols
+    call compute_lw_column(cols(:,i), lw_dtrans_clear, lw_emiss, Ts, T, lw_down_cloud, lw_up_cloud);
+    olr_cloud = olr_cloud + lw_up_cloud(1)/numcols;
+    surf_lw_down_cloud = surf_lw_down_cloud + lw_down_cloud(end)/numcols;
+    F = F + (lw_up_cloud-lw_down_cloud)/numcols;
+end do
+tdt_rad = grav/cp_air*(F(2:nhalf)-F(1:nhalf-1))./(p_half(2:nhalf) - p_half(1:nhalf-1));
+
+end subroutine 
+! ==================================================================================
+subroutine compute_lw_column(cf, lw_dtrans_clear, lw_emiss_col, Ts, T, lw_down_col, lw_up_col)
+implicit none
+real, intent(in) :: cf(:), lw_dtrans_clear(:), lw_emiss_col(:), Ts, T(:)
+real, intent(out), dimension(size(T)+1) :: lw_down_col, lw_up_col
+real, dimension(size(T)) :: T_tot, B
+real :: B_surf
+integer :: N
+
+N = length(cf);
+T_tot = (1-lw_emiss_col*cf)*lw_dtrans_clear;
+
+B = stefan*T**4;
+
+lw_down_col(1) = 0;
+do k = 1,N
+    lw_down_col(k+1) = T_tot(k)*lw_down_col(k) + B(k)*(1-T_tot(k)); 
+end
+
+B_surf = stefan*Ts**4;
+lw_up_col(N+1) = B_surf;
+do k = N,1,-1
+    lw_up_col(k) = lw_up_col(k+1)*T_tot(k) + B(k)*(1-T_tot(k));
+end
+
+end subroutine
+! ==================================================================================
+subroutine compute_sw(cols, lat, sw_toa_up, sw_surf_abs, sw_toa_up_cs, swdn_sfc_cs)
+implicit none
+real, intent(in) :: cols(:,:), lat
+real, intent(out) :: sw_toa_up, sw_surf_abs, sw_toa_up_cs, swdn_sfc_cs
+integer :: i,j,n,nlev, numclouds
+real :: insol_shape, albedo_at_loc, f, g, coszen, alp, ga, d, p, pm1, &
+        tau_sum, e, ts, r, t, rdiff, tdiff, rdiff_orig, T_tot, T_dir
+logical :: incloud
+real, dimension(size(cols,1)) :: tau_sc, R, T, T_dirs, rdiffs, tdiffs
+
+nlev = size(cols,1)
+
+insol_shape = (1. - 3.*sin(lat)**2)/4.
+insolation  = 0.25 * solar_constant * (1.0 + del_sol * insol_shape + del_sw * sin(lat))
+albedo_at_loc = albedo_value
+
+g = g_liq
+f = g**2
+
+tau_sc = tau*(1-f);
+coszen = cos(lat);
+
+alp = 0.75*coszen;
+ga = 0.5;
+d = alp - ga;
+p = alp + ga;
+pm1 = p - 1;
+
+sw_toa_up = 0.0;
+sw_surf_abs = 0.0;
+sw_toa_up_cs = insolation * albedo_at_loc;
+swdn_sfc_cs = insolation * (1 - albedo_at_loc)
+
+do i = 1,numcols
+    
+    numclouds = 0;
+    incloud = .false.;
+    tau_sum = 0;
+    do k = 1,nlev
+        if (cols(k,i) > 0) then
+            if (.not. incloud) then
+                incloud = .true.;
+                numclouds = numclouds + 1;
+            end if
+            tau_sum = tau_sum + tau_sc(k);
+        end if
+        if (cols(k,i) == 0 .or. k == nlev) then
+            if (incloud) then
+                e = exp(-tau_sum/coszen);
+                ts = (1-g)*tau_sum/(1-f);
+                r = ts / (4.0/3.0 + ts);
+                t = 1 - r;
+                T(numclouds) = p*t + d*r*e - pm1*e;
+                R(numclouds) = 1 - T(numclouds);
+                rdiffs(numclouds) = r;
+                tdiffs(numclouds) = t;
+                
+                T_dirs(numclouds) = e;
+                tau_sum = 0;
+                incloud = .false.;
+            end if
+        end if
+    end do
+    
+    R(numclouds + 1) = albedo_at_loc;
+    T(numclouds + 1) = 1.0 - albedo_at_loc;
+    rdiffs(numclouds + 1) = albedo_at_loc;
+    tdiffs(numclouds + 1) = 1.0 - albedo_at_loc;
+    
+    T_tot = T(1); T_dir = T_dirs(1); rdiff = rdiffs(1); tdiff = tdiffs(1);
+    do n = 2,numclouds+1
+        T_tot = T_dir*T(n) + (tdiffs(n)*(T_tot-T_dir + T_dir*R(n)*rdiff)) / (1-rdiff*rdiffs(n));
+        T_dir = T_dir*T_dirs(n);
+        rdiff_orig = rdiff;
+        rdiff = rdiff + (tdiff*tdiff*rdiffs(n))/(1.0-rdiff*rdiffs(n));
+        tdiff = tdiff*tdiffs(n)/(1-rdiff_orig*rdiffs(n));
+    end do
+    
+    sw_surf_abs = sw_surf_abs + T_tot*insolation/numcols;
+    sw_toa_up = sw_toa_up + (1 - T_tot)*insolation/numcols;
+end do
+
+
+end subroutine
+
+! ==================================================================================
+subroutine compute_independent_columns(cf, cols)
+implicit none
+real, intent(in) :: cf(:)
+real, intent(out) :: cols(:,:)
+integer :: i,k
+real :: x, r
+
+cols = 0.0
+do i = 1,numcols
+    call random_number(x)
+    if (x > 1-cf(1)) cols(1,i) = 1.0
+    do k = 2,size(cf)
+        if (cols(k-1,i) == 0.0) then
+            call random_number(r)
+            x = r*(1-cf(k-1));
+        end if
+        if (x > 1-cf(k)) cols(k,i) = 1.0
+    end do
+end do
+
+end subroutine
 ! ==================================================================================
 
 
@@ -347,6 +591,7 @@ initialized = .true.
 
 allocate (b                (ie-is+1, je-js+1, num_levels))
 allocate (tdt_rad          (ie-is+1, je-js+1, num_levels))
+allocate (tdt_rad_cs       (ie-is+1, je-js+1, num_levels))
 allocate (tdt_solar        (ie-is+1, je-js+1, num_levels))
 
 allocate (lw_dtrans        (ie-is+1, je-js+1, num_levels))
@@ -377,7 +622,11 @@ allocate (p2               (ie-is+1, je-js+1))
 
     id_olr = &
     register_diag_field ( mod_name, 'olr', axes(1:2), Time, &
-               'outgoing longwave radiation', &
+               'outgoing longwave radiation (all sky)', &
+               'W/m2', missing_value=missing_value               )
+    id_olr_cs = &
+    register_diag_field ( mod_name, 'olr_cs', axes(1:2), Time, &
+               'outgoing longwave radiation (clear sky)', &
                'W/m2', missing_value=missing_value               )
     id_swdn_sfc_cs = &
     register_diag_field ( mod_name, 'swdn_sfc_cs', axes(1:2), Time, &
@@ -385,7 +634,7 @@ allocate (p2               (ie-is+1, je-js+1))
                'W/m2', missing_value=missing_value               )
     id_swdn_sfc = &
     register_diag_field ( mod_name, 'swdn_sfc', axes(1:2), Time, &
-               'Absorbed SW at surface', &
+               'Absorbed SW at surface (all sky)', &
                'W/m2', missing_value=missing_value               )
     id_swdn_toa = &
     register_diag_field ( mod_name, 'swdn_toa', axes(1:2), Time, &
@@ -393,7 +642,7 @@ allocate (p2               (ie-is+1, je-js+1))
                'W/m2', missing_value=missing_value               )
     id_swup_toa = &
     register_diag_field ( mod_name, 'swup_toa', axes(1:2), Time, &
-               'SW flux up at TOA', &
+               'SW flux up at TOA (all sky)', &
                'W/m2', missing_value=missing_value               )
     id_swup_toa_cs = &
     register_diag_field ( mod_name, 'swup_toa_cs', axes(1:2), Time, &
@@ -406,7 +655,12 @@ allocate (p2               (ie-is+1, je-js+1))
 
     id_lwdn_sfc = &
     register_diag_field ( mod_name, 'lwdn_sfc', axes(1:2), Time, &
-               'LW flux down at surface', &
+               'LW flux down at surface (all sky)', &
+               'W/m2', missing_value=missing_value               )
+
+    id_lwdn_sfc_cs = &
+    register_diag_field ( mod_name, 'lwdn_sfc_cs', axes(1:2), Time, &
+               'LW flux down at surface (clear sky)', &
                'W/m2', missing_value=missing_value               )
 
     id_net_lw_surf = &
@@ -416,7 +670,12 @@ allocate (p2               (ie-is+1, je-js+1))
 
     id_tdt_rad = &
         register_diag_field ( mod_name, 'tdt_rad', axes(1:3), Time, &
-               'Temperature tendency due to radiation', &
+               'Temperature tendency due to radiation (all sky)', &
+               'K/s', missing_value=missing_value               )
+
+    id_tdt_rad_cs = &
+        register_diag_field ( mod_name, 'tdt_rad_cs', axes(1:3), Time, &
+               'Temperature tendency due to radiation (clear sky)', &
                'K/s', missing_value=missing_value               )
 
     id_tdt_solar = &

@@ -17,15 +17,15 @@ Q = zeros(size(L)) + Q0;
 strfun_max = rho0*dy*computeStreamfunMax(Q,L,H,sqrt(N2),r,eps)/1E9;
 
 figure;
-colormap(parula(13))
+colormap(parula(23))
 contourf(L/1000,H/1E3,strfun_max,'edgecolor','none');
 fs = 15;
 set(gca,'fontsize',fs)
 xlabel('L [km]','fontsize',fs)
 ylabel('H^z [km]','fontsize',fs)
-title('\textbf{c) Domain-prop., $\Lambda = 5.7 \cdot 10^{-6}$}', 'fontsize',fs, 'interpreter','latex')
+title('\textbf{a) Domain-prop., $\Lambda = 3.6 \cdot 10^{-8}$}', 'fontsize',fs, 'interpreter','latex')
 c1=colorbar;
-clim=[05,70];
+clim=[5,120];
 caxis(clim)
 view(2)
 axis tight
@@ -38,7 +38,7 @@ strfun_max = rho0*dy*(computeStreamfunMax(Q,L,H,sqrt(N2),r,eps))/1E9;
 % sqrt_part = 1./sqrt(2*L.^2+3*L.*H_s+H_s.^2);
 
 figure;
-colormap(parula(13))
+colormap(parula(23))
 contourf(L/1000,H/1E3,strfun_max,'edgecolor','none');
 fs = 15;
 set(gca,'fontsize',fs)
@@ -46,7 +46,7 @@ c2=colorbar;
 caxis(clim)
 xlabel('L [km]','fontsize',fs)
 ylabel('H^z [km]','fontsize',fs)
-title('\textbf{d) Constant total, $\Lambda = 5.7 \cdot 10^{-7}$}', 'fontsize',fs, 'interpreter','latex')
+title('\textbf{b) Constant total, $\Lambda = 3.6 \cdot 10^{-8}$}', 'fontsize',fs, 'interpreter','latex')
 % mintick = 1E4*ceil(min(10.^strfun_max(:))/1E4);
 % maxtick = 1E4*floor(max(10.^strfun_max(:))/1E4);
 % ticks = linspace(log10(mintick),log10(maxtick),10);

@@ -2,12 +2,12 @@ function plot_power_psi()
 
 load streamfun_months.mat
 
- plot_scatter(P, psimax_e, 'P [W/m^2]', 'M^E [Tg/s]',false);
+ plot_scatter(P/min(P), psimax_e/min(psimax_e), 'P [W/m^2]', 'M^E [Tg/s]',false);
 L = 2*pi*6371*L/360;
- xtick = plot_scatter(1./L, psimax_e, '1/L [1/km]', 'M^E [Tg/s]',false);
+ xtick = plot_scatter(Q/min(Q), psimax_e/min(psimax_e), 'int Q dm [PW]', 'M^E [Tg/s]',false);
 
 plot_scatter(P, -psimax_w, 'P [W/m^2]', '-M^W [Tg/s]', true);
-plot_scatter(1./L, -psimax_w, '1/L [1/km]', '-M^W [Tg/s]', true, xtick);
+plot_scatter(Q, -psimax_w, 'int Q dm [PW]', '-M^W [Tg/s]', true, xtick);
 
 end
 
