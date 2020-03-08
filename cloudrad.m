@@ -7,6 +7,11 @@ numcols = 200;
 %cloudfrac((1:N/2)+3) = 0.15*(1-(((1:N/2) - N/4)/(N/4)).^2);
 %cloudfrac(3*N/4:end) = 1.0*(1-(((3*N/4:N) - 7*N/8)/(N/7.5)).^2);
 cloudfrac = load('example_cloudfrac.dat');
+<<<<<<< HEAD
+=======
+cloudfrac(58:end) = 0;
+cloudfrac = cloudfrac*10;
+>>>>>>> 6f14b6b46841960d3eb7859b829362777d428b4c
 T = load('example_T.dat');
 N = length(cloudfrac);
 
@@ -30,6 +35,91 @@ title('tau')
 lat = 0; albedo = 0.07;
 compute_sw(cols, tau, lat, albedo)
 
+<<<<<<< HEAD
+=======
+eps = 1 - exp(-cwp*140);
+Ts = T(end)+0.5*(T(end)+T(end-1));
+p_half = linspace(0,1000E2,N+1);
+[tdt, tdt_cs] = compute_lw(cols, lat, eps, Ts, T, p_half);
+
+figure;
+subplot(1,2,1)
+plot(cloudfrac, 1:N); set(gca,'ydir','reverse')
+title('cloudfrac')
+subplot(1,2,2)
+plot((tdt-tdt_cs)*86400, 1:N); set(gca,'ydir','reverse')
+title('Cloud heating [K/day]')
+
+end
+
+function [tdt, tdt_cs] = compute_lw(cols, lat, lw_emiss, Ts, T, p_half)
+
+pstd_mks = 1E5;
+grav = 9.81;
+cp_air = 1005;
+linear_tau = 0.1;
+wv_exponent  = 4.0;
+ir_tau_eq = 6.0;
+ir_tau_pole = 1.5;
+lw_tau_clear_0 = ir_tau_eq + (ir_tau_pole - ir_tau_eq)*sind(lat)^2;
+
+N_half = length(p_half);
+N = N_half - 1;
+lw_tau_clear = zeros(length(p_half),1);
+for k = 1:N_half
+    lw_tau_clear(k) = lw_tau_clear_0 * ( linear_tau * p_half(k)/pstd_mks  ...
+       + (1.0 - linear_tau) * (p_half(k)/pstd_mks)^wv_exponent );
+end
+
+lw_dtrans_clear = zeros(N,1);
+for k = 1:N
+    lw_dtrans_clear(k) = exp( -(lw_tau_clear(k+1) - lw_tau_clear(k)) );
+end
+
+cloudfree = zeros(N,1);
+[lw_down_clear, lw_up_clear] = compute_lw_column(cloudfree, lw_dtrans_clear, lw_emiss, Ts, T);
+olr_cs = lw_up_clear(1);
+lw_surf_cs = lw_down_clear(end);
+F_cs = lw_up_clear - lw_down_clear;
+tdt_cs = grav/cp_air*(F_cs(2:end)-F_cs(1:end-1))./(p_half(2:end) - p_half(1:end-1));
+
+numcols = size(cols,2);
+olr = 0.0; lw_surf = 0.0; F = zeros(N+1,1);
+for i = 1:numcols
+    [lw_down, lw_up] = compute_lw_column(cols(:,i), lw_dtrans_clear, lw_emiss, Ts, T);
+    olr = olr + lw_up(1)/numcols;
+    lw_surf = lw_surf + lw_down(end)/numcols;
+    F = F + (lw_up-lw_down)/numcols;
+end
+tdt = grav/cp_air*(F(2:end)-F(1:end-1))./(p_half(2:end) - p_half(1:end-1));
+
+lw_cre = olr_cs - olr
+
+end
+
+function [lw_down, lw_up] = compute_lw_column(cf, lw_dtrans_clear, eps, Ts, T)
+
+sig = 5.670374419E-8;
+Tc = (1-eps'.*cf);
+N = length(cf);
+T_tot = Tc.*lw_dtrans_clear;
+
+B = sig*T.^4;
+lw_down = zeros(N+1,1);
+lw_up = zeros(N+1,1);
+
+lw_down(1) = 0;
+for k = 1:N
+    lw_down(k+1) = T_tot(k)*lw_down(k) + B(k)*(1-T_tot(k)); 
+end
+
+B_surf = sig*Ts^4;
+lw_up(end) = B_surf;
+for k = N:-1:1
+    lw_up(k) = lw_up(k+1)*T_tot(k) + B(k)*(1-T_tot(k));
+end
+
+>>>>>>> 6f14b6b46841960d3eb7859b829362777d428b4c
 end
 
 function compute_sw(cols, tau, lat, albedo)
@@ -40,7 +130,10 @@ del_sw = 0;
 
 g = 0.8; f = g^2; 
 tau_sc = tau*(1-f);
+<<<<<<< HEAD
 g_sc = (g-f)/(1-f);
+=======
+>>>>>>> 6f14b6b46841960d3eb7859b829362777d428b4c
 coszen = cosd(lat);
 
 alp = 0.75*coszen;
@@ -49,7 +142,11 @@ d = alp - ga;
 p = alp + ga;
 pm1 = p - 1;
 
+<<<<<<< HEAD
 ncols = size(cols,2);
+=======
+numcols = size(cols,2);
+>>>>>>> 6f14b6b46841960d3eb7859b829362777d428b4c
 N = size(cols,1);
 R = zeros(N,1);
 T = R;
@@ -63,7 +160,11 @@ sw_surf_abs = nan(N,1);
 sw_toa_up_cs = nan(N,1);
 
 
+<<<<<<< HEAD
 for i = 1:ncols
+=======
+for i = 1:numcols
+>>>>>>> 6f14b6b46841960d3eb7859b829362777d428b4c
     %figure;
     %plot(cols(:,i),1:N); set(gca,'ydir','reverse')
     

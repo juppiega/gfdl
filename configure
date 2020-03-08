@@ -1,0 +1,947 @@
+#! /usr/bin/env bash
+#______________________________________________________________________________
+#
+# Configuration file for NCRC Gaea system
+# 
+# To compile, replace lines 21936 to 21943 of src/echam/yaxt/configure and
+# lines 29404 to 29411 of src/echam/cdi/configure with:
+#
+#  /*xmpi(MPI_Init(&argc, &argv));*/
+#  char *numarg = argv[1];
+#  int cmdnum = atoi(numarg);
+#  int procnum = 1;
+#  /*xmpi(MPI_Allreduce(MPI_IN_PLACE, &procnum, 1, MPI_INT, MPI_SUM,
+#                     MPI_COMM_WORLD));*/
+#  /*xmpi(MPI_Finalize());*/
+#  return (0 == 0)?EXIT_SUCCESS:EXIT_FAILURE;
+#
+# Then, run this file in the mpiesm-1.2.01p5 folder:
+#
+# mpiesm/mpiesm-1.2.01p5> ./configure --without-regard-for-quality
+#______________________________________________________________________________
+#
+set -eu
+#_______________________________________________________________________________
+#
+# Package information
+#_______________________________________________________________________________
+#
+
+PACKAGE=mpiesm-1.2.01p5
+
+#_______________________________________________________________________________
+#
+# Utility functions
+#_______________________________________________________________________________
+#
+set +e # Do not break if terminal has no color capacity
+red=$(tput setaf 1)
+green=$(tput setaf 2)
+blue=$(tput setaf 4)
+bgcolor=$(tput sgr0)
+set -e
+#
+redln() { echo "${red}${1}${bgcolor}"; }
+blueln() { echo "${blue}${1}${bgcolor}"; }
+greenln () { echo "${green}${1}${bgcolor}"; }
+#
+function banner {
+    typeset line
+    line=________________________________________________________________________________
+    echo
+    blueln $line
+    echo
+    greenln "$*"
+    blueln $line
+    echo
+}
+
+function create {
+    $NO_CREATE && return
+    typeset file
+    file=$1
+    echo creating $file
+    mkdir -p $(dirname $1)
+    sed \
+    "
+        s,@prefix@,${configPrefix},g
+        s,@echam6_source@,${ECHAM6_SOURCE},g
+        s,@mpiom_source@,${MPIOM_SOURCE},g
+        s,@oasis3_mct_source@,${OASIS3_MCT_SOURCE},g
+        s,@distdir@,${PACKAGE},g
+        s,@environment@,${ENVIRONMENT},g
+        s,@top_srcdir@,${top_srcdir},g
+        s,@setup_options@,${setup_options},g
+    " \
+        $top_srcdir/$file.in > $file.check
+
+    if diff $file $file.check > /dev/null 2>&1
+    then
+        echo $file is unchanged
+        rm -f $file.check
+    else
+        mv -f $file.check $file
+    fi
+}
+
+function switchForModule {
+    packageName=$(echo $1 | awk -F "/" '{print $1}')
+    
+    for sameName in $(module -t list 2>&1 | awk -v packageName=$packageName '$1 ~ packageName {print}')
+    do
+        module unload $sameName
+    done
+    
+    for conflict in $(module show $packageName 2>&1 | awk '$1 ~ /conflict/ {print $2}')
+    do
+        module unload $conflict
+    done
+    
+    module load $1
+}
+
+#_______________________________________________________________________________
+#
+# Command line
+#_______________________________________________________________________________
+#
+
+for ARG in "$0" "$@"
+do
+    LINE=${LINE:-}${LINE:+ }$(printf %q "$ARG")
+done
+echo "configure for '$PACKAGE' run at $(date) as" >> config.log
+echo "$LINE" >> config.log
+
+NO_CREATE=false
+
+while [[ "${1:-}" == --* ]]
+do 
+    case "$1" in
+        --help*)
+            NO_CREATE=true
+            cat >&2 << EOT
+Usage: $0 [control_option ...] [option ...]
+
+Control options:
+
+--[no-](oasis|mpiom|echam), --no-recurse
+    (de-)select the submodels to be configured for building
+--with-mpi=...
+    select MPI implementation (names and default are system dependent)
+
+Special submodel options (always passed to submodel configure):
+
+--prefix=...
+    set installation directory
+--(en|dis)able-HAMOCC
+    add info for HAMOCC option to experiment setup config
+
+EOT
+            break
+            ;;
+        --oasis*|--mpiom*|--echam*|--no-oasis*|--no-mpiom*|--no-echam*)
+            case "$1" in
+                --no-*) setting=false; default=true  ;;
+                *)      setting=true;  default=false ;;
+            esac
+            CONFIGURE_OASIS3_MCT=${CONFIGURE_OASIS3_MCT:-$default}
+            CONFIGURE_MPIOM=${CONFIGURE_MPIOM:-$default}
+            CONFIGURE_ECHAM6=${CONFIGURE_ECHAM6:-$default}
+            case "$1" in
+                --*oasis*) CONFIGURE_OASIS3_MCT=$setting ;;
+                --*mpiom*) CONFIGURE_MPIOM=$setting ;;
+                --*echam*) CONFIGURE_ECHAM6=$setting ;;
+            esac
+            ;;
+        --no-recurse)
+            CONFIGURE_OASIS3_MCT=false
+            CONFIGURE_MPIOM=false
+            CONFIGURE_ECHAM6=false
+            ;;
+        --with-mpi=*)
+            configMPI=${1#--with-mpi=}
+            ;;
+        *) break;;
+    esac
+    shift
+done
+
+# Scan remaining options for setup options
+
+setup_options=
+for ARG
+do
+    case "$ARG" in
+        --disable-HAMOCC)
+            if [[ $setup_options != *no_hamocc* ]]
+            then
+                setup_options="$setup_options${setup_options:+,}no_hamocc"
+            fi
+            ;;
+        --enable-HAMOCC)
+            if [[ $setup_options == *no_hamocc* ]]
+            then
+                setup_options=${setup_options/,no_hamocc/}
+                setup_options=${setup_options/no_hamocc,/}
+                setup_options=${setup_options/no_hamocc/}
+            fi
+            ;;
+        --prefix=*)
+            configPrefix=${ARG#--prefix=}
+            ;;
+    esac
+done
+
+
+CONFIGURE_OASIS3_MCT=${CONFIGURE_OASIS3_MCT:-true}
+CONFIGURE_MPIOM=${CONFIGURE_MPIOM:-true}
+CONFIGURE_ECHAM6=${CONFIGURE_ECHAM6:-true}
+
+#_______________________________________________________________________________
+#
+#                     Define variablese
+CONFIG_SHELL=${CONFIG_SHELL:-""}
+
+CC=${CC:-""} 
+CXX=${CXX:-""} 
+CFLAGS=${CFLAGS:-""}
+F77=${F77:-""}
+FFLAGS=${FFLAGS:-""} 
+FC=${FC:-""} 
+MPIFC=${MPIFC:-""} 
+FCFLAGS=${FCFLAGS:-""} 
+FCFLAGS_MPIOM=${FCFLAGS_MPIOM:-""}
+FCFLAGS_ECHAM=${FCFLAGS_ECHAM:-""}
+ARFLAGS=${ARFLAGS:-""}
+WLFLAG=${WLFLAG:-""}
+
+MPIROOT=${MPIROOT:-""}
+MPI_INCLUDE=${MPI_INCLUDE:-""}     
+MPI_LIB=${MPI_LIB:-""}            
+
+NETCDFFROOT=${NETCDFFROOT:-""}    
+NETCDFF_VERSION=${NETCDFF_VERSION:-""} 
+NETCDFF_INCLUDE=${NETCDFF_INCLUDE:-""}
+NETCDFF_LIB=${NETCDFF_LIB:-""}
+
+NETCDFROOT=${NETCDFROOT:-""}      
+NETCDF_VERSION=${NETCDF_VERSION:-""} 
+NETCDF_INCLUDE=${NETCDF_INCLUDE:-""}
+NETCDF_LIB=${NETCDF_LIB:-""}
+
+HDF5ROOT=${HDF5ROOT:-""}           
+HDF5_VERSION=${HDF5_VERSION:-""} 
+HDF5_INCLUDE=${HDF5_INCLUDE:-""}    
+HDF5_LIB=${HDF5_LIB:-""}           
+
+SZIPROOT=${SZIPROOT:-""}           
+ZLIBROOT=${ZLIBROOT:-""}           
+
+SRCDIRS=${SRCDIRS:-""}
+LAPACKROOT=${LAPACKROOT:-""} 
+LAPACK_LIB=${LAPACK_LIB:-""}
+SUPPORTROOT=${SUPPORTROOT:-""}
+SUPPORT_LIB=${SUPPORT_LIB:-""}
+
+OASIS3_MCT_ROOT=${OASIS3_MCT_ROOT:-""}
+OASIS3MCT_FC_LIB=${OASIS3MCT_FC_LIB:-""}
+
+#_______________________________________________________________________________
+#
+#                               Customization
+#_______________________________________________________________________________
+#
+
+# Select one from the compiler configurations listed in the 'case ${configHost'
+# statement below.
+#
+# For your custom configuration, copy an appropriate case in the statement to a
+# new name, adjust to your needs and set configCompiler to the new name
+configCompiler=intel
+
+# Set installation directory (prefix) for the model components/binaries.
+# Defaults to the current working directory
+#
+# Within this directory, OASIS3-MCT creates 'lib' and 'install' sub-directories,
+# ECHAM and MPIOM use 'bin'.
+top_srcdir=$(cd $(dirname $0); pwd)
+top_builddir=$(pwd)
+configPrefix=${configPrefix:-$top_srcdir}
+
+# Select source code location or specific versions for the model components.
+# Must be given as absolute path names.
+#
+# This is relevant if you stored the source files at a different location
+# or if you got several versions of the components by repeatedly calling
+# 'get_mpiesm'. Defaults to the version that you got most recently, within the
+# current working directory.
+
+OASIS3_MCT_SOURCE=src/oasis3mct
+MPIOM_SOURCE=src/mpiom
+ECHAM6_SOURCE=src/echam
+
+#______________________________________________________________________________
+#
+blueln "Configure installation directory is $configPrefix"
+configHost=$(perl -l -mNet::Domain -e 'print Net::Domain::hostfqdn()')
+configSystem=$(lsb_release -sc || echo unknown)
+blueln "Configure for $configHost-$configSystem..."
+#______________________________________________________________________________
+#
+# Compiler configurations
+#
+
+CONFIG_SHELL=/bin/bash
+OASIS3_MCT_ROOT=$configPrefix
+
+DEFINES=
+LIBS_MPIOM=
+
+ENVIRONMENT=
+
+typeset -a site_extras=
+
+case $configHost-$configSystem in
+
+    erebus*)
+
+        # script is not under our control
+        set +u
+        source $MODULESHOME/init/bash
+        set -u
+
+        HDF5ROOT=/usr
+        SZIPROOT=n/a
+        ZLIBROOT=/usr/lib
+
+        SRCDIRS="support blas lapack"
+        LAPACKROOT=..
+        LAPACK_LIB='-L$(LAPACKROOT)/lib -llapack -lblas'
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        ARFLAGS=crv
+
+        greenln "selected GCC Fortran compiler"
+
+        module purge
+
+        MPIROOT=/usr/lib/openmpi
+        MPI_LIB="-pthread -lmpi_f90 -lmpi_f77 -lmpi -lopen-rte -lopen-pal -lrt -ldl -Wl,--export-dynamic -lnsl -lutil -lm -ldl"
+
+        NETCDFFROOT=/usr/lib
+        NETCDFROOT=/usr/lib
+
+        OASIS3MCT_FC_LIB="-L$NETCDFFROOT/lib -lnetcdff"
+
+        CC=gcc
+        FC=gfortran
+        F77=gfortran
+        MPIFC=mpif90
+
+        CFLAGS="-DgFortran -std=gnu99"
+        FFLAGS="-DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1 -ffixed-form"
+
+        FCFLAGS="-DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+
+        FCFLAGS_ECHAM="-Wall -Wcharacter-truncation -Wconversion -Wunderflow"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -Wunused-parameter -g -finit-real=nan"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -march=native -O3 -fomit-frame-pointer"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -ffast-math -static-libgfortran"
+
+        WLFLAG="-Wl"
+
+        FCFLAGS_MPIOM="-O3 -x f95-cpp-input -fimplicit-none"
+
+        ;;
+
+    cca*|dora*|daint*)
+        ENVIRONMENT=cscs
+
+        # script is not under our control
+        set +u
+        source $MODULESHOME/init/bash
+        set -u
+
+        compiler=$configCompiler
+
+	# CSCS: need to get lapack and blas later from CRAY libsci
+
+        SRCDIRS="support blas lapack"
+        LAPACKROOT=..
+        LAPACK_LIB='-L$(LAPACKROOT)/lib -llapack -lblas'
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        ARFLAGS=crv
+
+        case $compiler in
+
+            intel)
+
+                greenln "selected Intel Fortran compiler"
+
+		PE_ENV=${PE_ENV:-""}
+		if [[ $PE_ENV != "INTEL" ]]
+		then    
+		    pe_env=$(echo $PE_ENV | tr '[:upper:]' '[:lower:]')
+                    module swap PrgEnv-$pe_env PrgEnv-intel
+		fi    
+		
+		PE_NETCDF_MODULE_NAME=${PE_NETCDF_MODULE_NAME:-""}
+                if [[ $PE_NETCDF_MODULE_NAME != "cray-netcdf" ]]
+		then    
+		    module load cray-netcdf
+		fi    
+
+		PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$PE_INTEL_DEFAULT_FIXED_PKGCONFIG_PATH
+	     
+		prefix_string=$(pkg-config --print-variables mpich | awk '$1 ~ /prefix/ { print }')
+                MPIROOT=$(pkg-config --variable=${prefix_string} mpich)
+		MPI_INCLUDE=$(pkg-config --cflags mpich)
+		MPI_LIB="$(pkg-config --libs mpich) $(pkg-config --libs mpichf90)"
+
+		prefix_string=$(pkg-config --print-variables netcdff | awk '$1 ~ /prefix/ { print }')
+                NETCDFFROOT=$(pkg-config --variable=${prefix_string} netcdff)
+		NETCDFF_VERSION=$(pkg-config --modversion netcdff)
+		NETCDFF_INCLUDE=$(pkg-config --cflags netcdff)
+		NETCDFF_LIB=$(pkg-config --libs netcdff)
+
+		prefix_string=$(pkg-config --print-variables netcdf | awk '$1 ~ /prefix/ { print }')
+                NETCDFROOT=$(pkg-config --variable=${prefix_string} netcdf)
+		NETCDF_VERSION=$(pkg-config --modversion netcdf)
+		NETCDF_INCLUDE=$(pkg-config --cflags netcdf)
+		NETCDF_LIB=$(pkg-config --libs netcdf)
+		
+		netcdf_requires=
+		netcdf_requires=$(pkg-config --print-requires-private netcdf | awk 'NR==1 {print $1}')
+
+		prefix_string=$(pkg-config --print-variables hdf5 | awk '$1 ~ /prefix/ { print }')
+		HDF5ROOT=$(pkg-config --variable=${prefix_string} netcdf)
+		HDF5_VERSION=$(pkg-config --modversion hdf5)
+
+		shopt -s extglob
+		if [[ "${netcdf_requires}" == *hdf5* ]]
+		then    
+		    HDF5_INCLUDE=
+		    HDF5_LIB=
+		    for required in $(pkg-config --print-requires-private netcdf | awk '{print $1}')
+		    do
+			prefix_string=$(pkg-config --print-variables ${required} | awk '$1 ~ /prefix/ { print }')
+			HDF5ROOT=$(pkg-config --variable=${prefix_string} ${required})
+			HDF5_INCLUDE="${HDF5_INCLUDE} $(pkg-config --cflags ${required})"
+			HDF5_LIB="${HDF5_LIB} $(pkg-config --libs ${required})"
+		    done	
+		fi
+		shopt -u extglob
+
+                OASIS3MCT_FC_LIB=${NETCDFF_LIB}
+
+		SZIPROOT= # not available in CRAY PE ...
+		ZLIBROOT= # not given
+
+                CC=cc
+                FC=ftn
+                F77=ftn
+                MPIFC=ftn
+
+                CFLAGS="-Df2cFortran -std=gnu99 -O3"
+                FCFLAGS="-fno-alias -O3 -ip -align -DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+
+                FFLAGS="$FCFLAGS"
+                FCFLAGS_ECHAM="-O3 -fast-transcendentals -fp-model source"
+                FCFLAGS_MPIOM="-fp-model source -fpe0 -i4 -heap-arrays -convert big_endian -fpp -O3"
+
+		site_extras=(NETCDFF_VERSION="$NETCDFF_VERSION" NETCDFF_INCLUDE="$NETCDFF_INCLUDE" NETCDFF_LIB="$NETCDFF_LIB")
+		site_extras+=(NETCDF_VERSION="$NETCDF_VERSION" NETCDF_INCLUDE="$NETCDF_INCLUDE" NETCDF_LIB="$NETCDF_LIB")
+		site_extras+=(HDF5_VERSION="$HDF5_VERSION" HDF5_INCLUDE="$HDF5_INCLUDE" HDF5_LIB="$HDF5_LIB")
+
+                ;;
+
+            *)
+
+                redln "compiler $compiler not known"
+
+                ;;
+        esac
+
+        ;;
+
+    d133*|bailung*|wanglung*|feilung*|cinglung*|huanglung*)
+
+        greenln "selected GCC Fortran compiler"
+
+        SRCDIRS="support blas lapack"
+        LAPACKROOT=..
+        LAPACK_LIB='-L$(LAPACKROOT)/lib -llapack -lblas'
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        CC=gcc
+        CFLAGS="-DpgiFortran -std=gnu99"
+        FC=gfortran
+        FCFLAGS=
+        F77=gfortran
+        FFLAGS=-ffixed-form
+        ARFLAGS=crv
+        MPIFC=openmpif90
+        MPIROOT="/opt/local"
+        MPI_LIB="-Wl,-commons,use_dylibs -lmpi_f90 -lmpi_f77 -lmpi -lm"
+        NETCDFFROOT=//opt/local
+        NETCDFROOT=/opt/local
+        HDF5ROOT=/opt/local
+        SZIPROOT=/opt/local
+        ZLIBROOT=/usr
+
+        FCFLAGS_ECHAM="-Wall -Wcharacter-truncation -Wconversion -Wunderflow"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -Wunused-parameter -g -finit-real=nan"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -march=native -O -fomit-frame-pointer"
+        FCFLAGS_ECHAM="$FCFLAGS_ECHAM -ffast-math -static-libgfortran"
+
+        FCFLAGS_MPIOM="-x f95-cpp-input -std=f2003 -fimplicit-none"
+
+        OASIS3MCT_FC_LIB="-L$NETCDFFROOT/lib -lnetcdff"
+
+        ;;
+
+   greina*)
+        ENVIRONMENT=greina
+
+        set +u
+        . $MODULESHOME/init/bash
+        set -u
+
+        compiler=$configCompiler
+
+        ZLIBROOT=/usr
+
+        SRCDIRS="support"
+        LAPACKROOT=
+        LAPACK_LIB=
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        ARFLAGS=crv
+
+        case $compiler in
+            intel)
+                greenln "selected Intel Fortran compiler"
+
+                module purge
+                module load intel/compiler/64/15.0/2015.3.187
+                module load openmpi-1.8.6/intel-15.0.3
+                module load hdf5/1.8.15-patch1_intel15.0-3	    
+    	        module load netcdf/intel/15.0-3/4.3.3.1_hdf5-1.8.15patch1
+
+                MPIROOT=$MPI_HOME
+                MPIFC=mpif90
+                MPICC=mpicc
+
+                MPI_LIB=$($MPIROOT/bin/$MPIFC -show |sed -e 's/^[^ ]*//' -e 's/-[I][^ ]*//g')
+                NETCDFFROOT=$NETCDF
+                NETCDFROOT=$NETCDF
+                HDF5ROOT=$HDF5DIR
+                SZIPROOT=
+
+                LAPACK_LIB='-mkl=sequential'
+
+                OASIS3MCT_FC_LIB="-L$NETCDFFROOT/lib -lnetcdff"
+
+                CC=icc
+                CXX=icpc
+                FC=ifort
+                F77=ifort
+
+                CFLAGS="-O2 -DgFortran -std=gnu99"
+                FCFLAGS="-O3 -xHost -DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+                FFLAGS="$FCFLAGS"
+                WLFLAG="-Wl"   
+                FCFLAGS_ECHAM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -no-prec-div -xHost"
+                FCFLAGS_MPIOM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -xHost -heap-arrays -convert big_endian -fpp"
+                LIBS_MPIOM="-Wl,-rpath,${NETCDFFROOT}/lib:${NETCDFROOT}/lib:${HDF5ROOT}/lib:${SZIPROOT}/lib:${MPIROOT}/lib"
+                ;;
+	esac
+	;;
+
+   gaea*)
+        ENVIRONMENT=gaea
+        greenln "Compiling for Gaea"
+        set +u
+        . $MODULESHOME/init/bash
+        set -u
+
+        compiler=$configCompiler
+
+        #ZLIBROOT=/usr
+
+        SRCDIRS="support"
+        LAPACKROOT=
+        LAPACK_LIB=
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        ARFLAGS=crv
+
+        case $compiler in
+            intel)
+                greenln "selected Intel Fortran compiler"
+
+                #module purge
+                module load craype
+                module load cray-mpich
+                module load intel
+                module load cray-shmem
+                module load cray-netcdf
+                module load cray-hdf5
+                module load PrgEnv-intel/6.0.3
+                #module load intel/compiler/64/15.0/2015.3.187
+                #module load openmpi-1.8.6/intel-15.0.3
+                #module load hdf5/1.8.15-patch1_intel15.0-3	    
+    	        #module load netcdf/intel/15.0-3/4.3.3.1_hdf5-1.8.15patch1
+
+                MPIROOT=$MPICH_DIR
+                MPIFC=ftn
+                MPICC=cc
+
+                MPI_LIB=
+                NETCDFFROOT=$NETCDF_DIR
+                NETCDFROOT=$NETCDF_DIR
+                HDF5ROOT=$HDF5_DIR
+                SZIPROOT=
+
+                LAPACK_LIB='-mkl=sequential'
+
+                OASIS3MCT_FC_LIB="-L$NETCDFFROOT/lib -lnetcdff"
+
+                CC=cc
+                CXX=CC
+                FC=ftn
+                F77=ftn
+
+                CFLAGS="-O2 -DgFortran -std=gnu99"
+                FCFLAGS="-O3 -xHost -DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+                FFLAGS="$FCFLAGS"
+                WLFLAG="-Wl"   
+                FCFLAGS_ECHAM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -no-prec-div -xHost"
+                FCFLAGS_MPIOM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -xHost -heap-arrays -convert big_endian -fpp"
+                LIBS_MPIOM="-Wl,-rpath,${NETCDFFROOT}/lib:${NETCDFROOT}/lib:${HDF5ROOT}/lib:${SZIPROOT}/lib:${MPIROOT}/lib"
+                ;;
+	esac
+	;;
+
+   mlogin*)
+        ENVIRONMENT=mistral
+
+        set +u
+        . $MODULESHOME/init/bash
+        set -u
+
+        compiler=$configCompiler
+
+        ZLIBROOT=/usr
+
+        SRCDIRS="support"
+        LAPACKROOT=
+        LAPACK_LIB=
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+
+        ARFLAGS=crv
+
+        case $compiler in
+            intel)
+                greenln "selected Intel Fortran compiler"
+
+                case "${configMPI:-}" in
+                    intelmpi*)
+                        MPIFC=mpiifort
+                        MPICC=mpiicc
+                        MPIROOT=$($MPIFC -show |
+                                  perl -lne 'm{ -I(.*?)/include } and print $1')
+                    ;;
+                    bullxmpi*|*)
+                        MPIFC=mpif90
+                        MPICC=mpicc
+                        MPIROOT=$($MPIFC --showme:incdirs |
+                                  perl -lne 'm{(^|:)(.*?)/include(:|$)} and print $2')
+                    ;;
+                esac
+                MPI_LIB=$($MPIFC -show |sed -e 's/^[^ ]*//' -e 's/-[I][^ ]*//g')
+                NETCDFFROOT=/sw/rhel6-x64/netcdf/netcdf_fortran-4.4.3-intel14
+                NETCDFROOT=/sw/rhel6-x64/netcdf/netcdf_c-4.4.0-gcc48
+                HDF5ROOT=/sw/rhel6-x64/hdf5/hdf5-1.8.14-threadsafe-gcc48
+                SZIPROOT=/sw/rhel6-x64/sys/libaec-0.3.2-gcc48
+
+                LAPACK_LIB='-mkl=sequential'
+
+                OASIS3MCT_FC_LIB="-L$NETCDFFROOT/lib -lnetcdff"
+
+                CC=icc
+                CXX=icpc
+                FC=ifort
+                F77=ifort
+
+                CFLAGS="-O2 -DgFortran -std=gnu99"
+                FCFLAGS="-O3 -xHost -DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+                FFLAGS="$FCFLAGS"
+                WLFLAG="-Wl"   
+                FCFLAGS_ECHAM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -no-prec-div -xHost"
+                FCFLAGS_MPIOM="-O3 -fp-model source -fast-transcendentals -no-prec-sqrt -xHost -heap-arrays -convert big_endian -fpp"
+                # TODO # FCFLAGS_MPIOM="-O3 -fp-model source -fast-transcendentals -heap-arrays -convert big_endian -fpp"
+                LIBS_MPIOM="-Wl,-rpath,${NETCDFFROOT}/lib:${NETCDFROOT}/lib:${HDF5ROOT}/lib:${SZIPROOT}/lib:${MPIROOT}/lib"
+                ;;
+        esac
+        ;;
+        
+    sisu-*)
+    
+        ENVIRONMENT=csc_sisu
+        
+        set +u
+        source $MODULESHOME/init/bash
+        set -u
+        
+        compiler=$configCompiler
+        
+        SRCDIRS="support"
+        LAPACKROOT=
+        LAPACK_LIB=
+        SUPPORTROOT=..
+        SUPPORT_LIB='-L$(SUPPORTROOT)/lib -lsupport'
+        ARFLAGS=crv
+        
+        case $compiler in
+        
+            intel)            
+                switchForModule PrgEnv-intel
+                switchForModule craype-sandybridge
+                switchForModule cray-mpich/7.3.1
+                switchForModule cray-netcdf/4.3.3.1
+                switchForModule cray-hdf5/1.8.14
+                PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$PE_INTEL_FIXED_PKGCONFIG_PATH
+                ;;
+        esac
+        
+        prefix_string=$(pkg-config --print-variables mpich | awk '$1 ~ /prefix/ { print }')
+        MPIROOT=$(pkg-config --variable=${prefix_string} mpich)
+        MPI_INCLUDE=$(pkg-config --cflags mpich)
+        MPI_LIB="$(pkg-config --libs mpich) $(pkg-config --libs mpichf90)"
+        
+        prefix_string=$(pkg-config --print-variables netcdff | awk '$1 ~ /prefix/ { print }')
+        NETCDFFROOT=$(pkg-config --variable=${prefix_string} netcdff)
+        NETCDFF_VERSION=$(pkg-config --modversion netcdff)
+        NETCDFF_INCLUDE=$(pkg-config --cflags netcdff)
+        NETCDFF_LIB=$(pkg-config --libs netcdff)
+        
+        prefix_string=$(pkg-config --print-variables netcdf | awk '$1 ~ /prefix/ { print }')
+        NETCDFROOT=$(pkg-config --variable=${prefix_string} netcdf)
+        NETCDF_VERSION=$(pkg-config --modversion netcdf)
+        NETCDF_INCLUDE=$(pkg-config --cflags netcdf)
+        NETCDF_LIB=$(pkg-config --libs netcdf)
+        
+        prefix_string=$(pkg-config --print-variables hdf5 | awk '$1 ~ /prefix/ { print }')
+        HDF5ROOT=$(pkg-config --variable=${prefix_string} hdf5)
+        HDF5_VERSION=$(pkg-config --modversion hdf5)
+        HDF5_INCLUDE=$(pkg-config --cflags hdf5)
+        HDF5_LIB=$(pkg-config --libs hdf5)
+        
+        CC=cc
+        CXX=CC
+        FC=ftn
+        F77=ftn
+        MPIFC=ftn
+        
+        CFLAGS="-std=gnu99 -O3"
+        FCFLAGS="-fno-alias -O3 -ip -align -DTREAT_OVERLAY -Duse_netCDF -Duse_comm_MPI1"
+        
+        FFLAGS="$FCFLAGS"
+        FCFLAGS_ECHAM="-O3 -fast-transcendentals -fp-model source"
+        FCFLAGS_MPIOM="-fp-model source -fpe0 -i4 -heap-arrays -convert big_endian -fpp -O3"
+        ;;
+
+esac
+#_______________________________________________________________________________
+#
+#                            End of Customization
+#_______________________________________________________________________________
+#
+# Main routine
+#_______________________________________________________________________________
+#
+
+banner Creating Makefiles
+
+#_______________________________________________________________________________
+#
+echo
+blueln "CONFIG_SHELL     $CONFIG_SHELL"
+echo
+blueln "CC               $CC" 
+blueln "CXX              $CXX" 
+blueln "CFLAGS           $CFLAGS"
+blueln "F77              $F77" 
+blueln "FFLAGS           $FFLAGS" 
+blueln "FC               $FC" 
+blueln "MPIFC            $MPIFC" 
+blueln "FCFLAGS          $FCFLAGS" 
+blueln "FCFLAGS_MPIOM    $FCFLAGS_MPIOM"
+blueln "FCFLAGS_ECHAM    $FCFLAGS_ECHAM"
+blueln "ARFLAGS          $ARFLAGS"
+blueln "WLFLAG           $WLFLAG"
+echo
+blueln "MPIROOT          $MPIROOT"
+blueln "MPI_INCLUDE      $MPI_INCLUDE"     
+blueln "MPI_LIB          $MPI_LIB"            
+echo
+blueln "NETCDFFROOT      $NETCDFFROOT"    
+blueln "NETCDFF_VERSION  $NETCDFF_VERSION" 
+blueln "NETCDFF_INCLUDE  $NETCDFF_INCLUDE"
+blueln "NETCDFF_LIB      $NETCDFF_LIB"
+echo
+blueln "NETCDFROOT       $NETCDFROOT"      
+blueln "NETCDF_VERSION   $NETCDF_VERSION" 
+blueln "NETCDF_INCLUDE   $NETCDF_INCLUDE"
+blueln "NETCDF_LIB       $NETCDF_LIB"
+echo
+blueln "HDF5ROOT         $HDF5ROOT"           
+blueln "HDF5_VERSION     $HDF5_VERSION" 
+blueln "HDF5_INCLUDE     $HDF5_INCLUDE"    
+blueln "HDF5_LIB         $HDF5_LIB"           
+echo
+blueln "SZIPROOT         $SZIPROOT"           
+blueln "ZLIBROOT         $ZLIBROOT"           
+echo
+blueln "SRCDIRS          $SRCDIRS"
+blueln "LAPACKROOT       $LAPACKROOT" 
+blueln "LAPACK_LIB       $LAPACK_LIB"
+blueln "SUPPORTROOT      $SUPPORTROOT"
+blueln "SUPPORT_LIB      $SUPPORT_LIB"
+echo
+blueln "OASIS3_MCT_ROOT  $OASIS3_MCT_ROOT"
+blueln "OASIS3MCT_FC_LIB $OASIS3MCT_FC_LIB"
+echo
+
+create Makefile
+create run/SETUP.config
+
+#_______________________________________________________________________________
+#
+
+if $CONFIGURE_OASIS3_MCT
+then
+    mkdir -p $top_builddir/$OASIS3_MCT_SOURCE
+    cd $top_builddir/$OASIS3_MCT_SOURCE
+
+    banner Configuring OASIS3-MCT @ $(pwd)
+
+    $CONFIG_SHELL $top_srcdir/$OASIS3_MCT_SOURCE/configure \
+        --prefix=$OASIS3_MCT_ROOT \
+        CONFIG_SHELL=$CONFIG_SHELL \
+        CC="$CC" \
+        F77="$F77" \
+        FFLAGS="$FFLAGS" \
+        FC="$FC" \
+        MPIFC="$MPIFC" \
+        FCFLAGS="$FCFLAGS" \
+        ARFLAGS="$ARFLAGS" \
+        HDF5ROOT="$HDF5ROOT" \
+        NETCDFFROOT="$NETCDFFROOT" \
+        NETCDFROOT="$NETCDFROOT" \
+        "${site_extras[@]}" \
+        "${@:-}"
+fi
+
+#_______________________________________________________________________________
+#
+
+if $CONFIGURE_MPIOM
+then
+    mkdir -p $top_builddir/$MPIOM_SOURCE
+    cd $top_builddir/$MPIOM_SOURCE
+
+    banner Configuring MPIOM @ $(pwd)
+
+    FORT_REAL_LEN=${FORT_REAL_LEN:-""}
+    cross_compiling=${cross_compiling:-""}
+
+    $CONFIG_SHELL $top_srcdir/$MPIOM_SOURCE/configure \
+        --prefix=$configPrefix \
+        --disable-mh-file \
+        --with-coupler=oasis3-mct \
+        --enable-HAMOCC \
+        CONFIG_SHELL=$CONFIG_SHELL \
+        CC="$CC" \
+        CFLAGS="$CFLAGS" \
+        FC="$MPIFC" \
+        FCFLAGS="$FCFLAGS_MPIOM" \
+        ARFLAGS="$ARFLAGS" \
+        MPIROOT="$MPIROOT" \
+        ZLIBROOT="$ZLIBROOT" \
+        SZIPROOT="$SZIPROOT" \
+        HDF5ROOT="$HDF5ROOT" \
+        NETCDFROOT="$NETCDFROOT" \
+        LIBS="$LIBS_MPIOM" \
+        OASIS3MCT_FC_LIB="$OASIS3MCT_FC_LIB" \
+        OASIS3MCTROOT="$OASIS3_MCT_ROOT" \
+        QUEUE_SUBMIT="" \
+        FORT_REAL_LEN="$FORT_REAL_LEN" \
+        cross_compiling="$cross_compiling" \
+        "${site_extras[@]}" \
+        "${@:-}"
+fi
+
+#_______________________________________________________________________________
+#
+
+if $CONFIGURE_ECHAM6
+then
+    mkdir -p $top_builddir/$ECHAM6_SOURCE
+    cd $top_builddir/$ECHAM6_SOURCE
+
+    banner Configuring ECHAM @ $(pwd)
+
+    # Note that the configure of ECHAM does not work with mpif90
+    # mpi libraries have to be provided in MPI_LIB. The mpi include
+    # directory is deduced from MPIROOT.
+
+    $CONFIG_SHELL $top_srcdir/$ECHAM6_SOURCE/configure \
+        --prefix=$configPrefix \
+        --disable-mh-file \
+        --with-coupler=oasis3-mct \
+        --enable-cdi-pio \
+        --disable-shared \
+        CONFIG_SHELL=$CONFIG_SHELL \
+        CC="$CC" \
+        CXX="$CXX" \
+        CFLAGS="$CFLAGS" \
+        FFLAGS="$FFLAGS" \
+        FC="$FC" \
+        F77="$F77" \
+        FCFLAGS="$FCFLAGS_ECHAM" \
+        ARFLAGS="$ARFLAGS" \
+        WLFLAG="$WLFLAG" \
+        MPIROOT="$MPIROOT" \
+        NETCDFROOT="$NETCDFROOT" \
+        NETCDFFROOT="$NETCDFFROOT" \
+        HDF5ROOT="$HDF5ROOT" \
+        SZIPROOT="$SZIPROOT" \
+        OASIS3MCTROOT="$OASIS3_MCT_ROOT" \
+        MPI_LIB="$MPI_LIB" \
+        SRCDIRS="$SRCDIRS" \
+        LAPACKROOT="$LAPACKROOT" \
+        LAPACK_LIB="$LAPACK_LIB" \
+        SUPPORTROOT="$SUPPORTROOT" \
+        SUPPORT_LIB="$SUPPORT_LIB" \
+        "${site_extras[@]}" \
+        ${DEFINES} \
+        "${@:-}"
+fi
+
+#_______________________________________________________________________________
+#
+
+banner All components configured
+
+#_______________________________________________________________________________
+#
